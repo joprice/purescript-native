@@ -148,13 +148,14 @@ literals = mkPattern' match'
     , return $ emit ", "
     , intercalate (emit ", ") <$> forM args prettyPrintIL'
     , return $ emit ")"
+    ]
 -- end go optimizations?
   -- TODO(joprice) only applies to cpp branch
   -- Unbox value
-  match (App _ (StringLiteral _ u) [val])
-    | Just ty <- decodeString u = mconcat <$> sequence
-    [  return . emit $ unbox' ty val
-    ]
+  -- match (App _ (StringLiteral _ u) [val])
+  --  | Just ty <- decodeString u = mconcat <$> sequence
+  --  [  return . emit $ unbox' ty val
+  --  ]
   match (App _ val args) = mconcat <$> sequence
     [ return $ emit "Apply("
     , prettyPrintIL' val

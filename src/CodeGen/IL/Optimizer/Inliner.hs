@@ -127,7 +127,6 @@ inlineCommonOperators = everywhereTopDown $ applyAll $
   [ fn | i <- [0..10], fn <- [ mkFn i, runFn i ] ] ++
   [ fn | i <- [0..10], fn <- [ mkEffFn C.controlMonadEffUncurried C.mkEffFn i, runEffFn C.controlMonadEffUncurried C.runEffFn i ] ] ++
   [ fn | i <- [0..10], fn <- [ mkEffFn C.effectUncurried C.mkEffectFn i, runEffFn C.effectUncurried C.runEffectFn i ] ]
-  ]
   where
   binary :: (Text, PSString) -> (Text, PSString) -> BinaryOperator -> AST -> AST
   binary dict@(_, d) fns op = convert where
