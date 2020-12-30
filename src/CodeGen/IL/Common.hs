@@ -208,9 +208,9 @@ unretainedSuffix = "_weak_"
 freshName' :: MonadSupply m => m Text
 freshName' = do
     name <- freshName
-    return $ T.replace "$" "_var" name <> "_"
+    return $ T.replace "$" "ṩ" name
+    -- return $ T.replace "$" "_var" name <> "_"
     -- TODO(joprice) cpp
-    -- return $ T.replace "$" "ṩ" name
 
 moduleRenamerMarker :: Text
 moduleRenamerMarker = "__"
