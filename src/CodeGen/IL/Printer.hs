@@ -78,6 +78,8 @@ literals = mkPattern' match'
     , return $ emit "}"
     ]
   match (Var _ ident) | ident == C.undefined = return $ emit undefinedName
+  -- TODO(joprice) cpp - C.undefined vs undefinedName?
+  -- match (Var _ ident) | ident == C.undefined = return $ emit C.undefined
   match (Var _ ident) = return $ emit ident
   match (VariableIntroduction _ ident value) = mconcat <$> sequence
     [ return . emit $ varDecl <> " " <> ident <> " " <> anyType
@@ -93,6 +95,7 @@ literals = mkPattern' match'
     , prettyPrintIL' val
     , return $ emit ")"
     ]
+-- TODO(joprice) this section was added in go branch, not sure if it breaks cpp yet
   match (App _ (StringLiteral _ u) [arg])
     | Just ty <- decodeString u = mconcat <$> sequence
     [ prettyPrintIL' arg
@@ -145,6 +148,12 @@ literals = mkPattern' match'
     , return $ emit ", "
     , intercalate (emit ", ") <$> forM args prettyPrintIL'
     , return $ emit ")"
+-- end go optimizations?
+  -- TODO(joprice) only applies to cpp branch
+  -- Unbox value
+  match (App _ (StringLiteral _ u) [val])
+    | Just ty <- decodeString u = mconcat <$> sequence
+    [  return . emit $ unbox' ty val
     ]
   match (App _ val args) = mconcat <$> sequence
     [ return $ emit "Apply("
@@ -200,12 +209,33 @@ literals = mkPattern' match'
     , return $ emit "()"
     ]
   match (Indexer _ (Var _ name) val) = mconcat <$> sequence
+  -- TODO(joprice) cpp
+  {-
+    where
+    (captures, render)
+      | name == Just tcoLoop = ("[&]", renderArgByVal)
+      | otherwise = ("[=]", renderArg)
+  match (Indexer _ (Var _ name) (Var _ "")) = mconcat <$> sequence
+    [ prettyPrintIL' (Var Nothing name)
+    , return $ emit "()"
+    ]
+  match (Indexer _ prop@(Var _ name) val) = mconcat <$> sequence
+  -}
     [ prettyPrintIL' val
     , return $ emit "."
     , prettyPrintIL' (Var Nothing $ withPrefix name)
     , return $ emit "()"
     ]
   match (Indexer _ prop@StringLiteral{} val@ObjectLiteral{}) = mconcat <$> sequence
+  --TODO: cpp
+  {-
+    [ prettyPrintIL' val
+    , return $ emit "["
+    , prettyPrintIL' prop
+    , return $ emit "]"
+    ]
+  match (Indexer _ prop val) = mconcat <$> sequence
+  -}
     [ prettyPrintIL' val
     , return $ emit "["
     , prettyPrintIL' prop
@@ -260,6 +290,7 @@ literals = mkPattern' match'
     , return $ emit " "
     , prettyPrintIL' sts
     ]
+-- TODO(joprice) cpp - the following two match cases were removed. is this already handled elsewhere in the case of cpp?
   match (IfElse _ (Binary _ EqualTo cond@Binary{} (BooleanLiteral Nothing True)) thens elses) = mconcat <$> sequence
     [ return $ emit "if "
     , prettyPrintIL' cond
@@ -274,6 +305,57 @@ literals = mkPattern' match'
     , prettyPrintIL' thens
     , maybe (return mempty) (fmap (emit " else " <>) . prettyPrintIL') elses
     ]
+-- start cpp commented out
+  -- match (IfElse _ (Binary _ EqualTo cond@(Binary{}) (BooleanLiteral Nothing True)) thens elses) = mconcat <$> sequence
+  --   [ return $ emit "if ("
+  --   , prettyPrintIL' cond
+  --   , return $ emit ") "
+  --   , prettyPrintIL' thens
+  --   , maybe (return mempty) (fmap (emit " else " <>) . prettyPrintIL') elses
+  --   ]
+  -- match (IfElse _ (Binary _ EqualTo cond@(Binary{}) (BooleanLiteral Nothing False)) thens elses) = mconcat <$> sequence
+  --   [ return $ emit "if (!("
+  --   , prettyPrintIL' cond
+  --   , return $ emit ")) "
+  --   , prettyPrintIL' thens
+  --   , maybe (return mempty) (fmap (emit " else " <>) . prettyPrintIL') elses
+  --   ]
+  -- match (IfElse _ (Binary _ EqualTo cond (BooleanLiteral Nothing True)) thens elses) = mconcat <$> sequence
+  --   [ return $ emit "if ("
+  --   , return $ emit $ unbox' "bool" cond
+  --   , return $ emit ") "
+  --   , prettyPrintIL' thens
+  --   , maybe (return mempty) (fmap (emit " else " <>) . prettyPrintIL') elses
+  --   ]
+  -- match (IfElse _ (Binary _ EqualTo cond (BooleanLiteral Nothing False)) thens elses) = mconcat <$> sequence
+  --   [ return $ emit "if (!("
+  --   , return $ emit $ unbox' "bool" cond
+  --   , return $ emit ")) "
+  --   , prettyPrintIL' thens
+  --   , maybe (return mempty) (fmap (emit " else " <>) . prettyPrintIL') elses
+  --   ]
+  -- match (IfElse _ (Binary _ EqualTo x y@(NumericLiteral _ n)) thens elses) = mconcat <$> sequence
+  --   [ return $ emit "if ("
+  --   , return $ emit $ unbox' t x
+  --   , return $ emit $ " == "
+  --   , prettyPrintIL' y
+  --   , return $ emit ") "
+  --   , prettyPrintIL' thens
+  --   , maybe (return mempty) (fmap (emit " else " <>) . prettyPrintIL') elses
+  --   ]
+  --   where
+  --   t | Left _ <- n  = int
+  --     | Right _ <- n = float
+  -- match (IfElse _ (Binary _ EqualTo a b@StringLiteral{}) thens elses) = mconcat <$> sequence
+  --   [ return $ emit "if ("
+  --   , return $ emit $ unbox' string a
+  --   , return $ emit $ " == "
+  --   , prettyPrintIL' b
+  --   , return $ emit ") "
+  --   , prettyPrintIL' thens
+  --   , maybe (return mempty) (fmap (emit " else " <>) . prettyPrintIL') elses
+  --   ]
+-- end cpp commented out
   match (IfElse _ cond thens elses) = mconcat <$> sequence
     [ return $ emit "if "
     , prettyPrintIL' cond
@@ -285,10 +367,14 @@ literals = mkPattern' match'
     [ return $ emit "return "
     , prettyPrintIL' value
     ]
+  -- TODO(joprice): cpp - undefinedName?
+  -- match (ReturnNoResult _) = return . emit $ "return " <> C.undefined
   match (ReturnNoResult _) = return . emit $ "return " <> undefinedName
   -- match (Throw _ _) = return mempty
   match (Throw _ value) = mconcat <$> sequence
     [ return $ emit "panic("
+    -- TODO(joprice) cpp
+    -- [ return $ emit "THROW_("
     , prettyPrintIL' value
     , return $ emit ")"
     ]
@@ -351,6 +437,7 @@ binary op str = AssocL match (\v1 v2 -> v1 <> emit (" " <> str <> " ") <> v2)
   match :: Pattern PrinterState AST (AST, AST)
   match = mkPattern match'
     where
+    match' (Binary _ op' v1@StringLiteral{} v2@StringLiteral{}) | op' == op = Just (App Nothing (Var Nothing string) [v1], v2)
     match' (Binary _ op' v1 v2) | op' == op = Just (v1, v2)
     match' _ = Nothing
 
@@ -442,6 +529,13 @@ stringLiteral pss | Just s <- decodeString pss = stringLiteral' s
   encodeChar c = T.singleton $ c
 stringLiteral _ = "\"\\uFFFD\""
 
+unbox' :: Text -> AST -> Text
+unbox' _ v@(NumericLiteral{}) = prettyPrintIL1 v
+unbox' _ v@(BooleanLiteral{}) = prettyPrintIL1 v
+unbox' _ v@(StringLiteral{})  = prettyPrintIL1 v
+unbox' _ v@(Binary{})         = prettyPrintIL1 v
+unbox' t v = unbox t <> "(" <> prettyPrintIL1 v <> ")"
+
 interfaceSource :: Text -> [(Text,Bool)] -> [Ident] -> Text
 interfaceSource _ _ _ = ""
 
@@ -465,6 +559,13 @@ implHeaderSource mn imports otherPrefix =
     | (s', sfx) <- T.breakOn moduleRenamerMarker s,
       not $ T.null sfx = s'
   moduleRenamer s = s
+-- TODO(joprice): cpp
+-- implHeaderSource :: Text -> [(Text, Text)] -> Text -> Text
+-- implHeaderSource mn imports interfaceImport =
+--   (T.concat $ fst <$> imports) <> "\n"<>
+--   interfaceImport <> "\n\n" <>
+--  (T.concat $ snd <$> imports) <> "\n"<>
+--  "namespace " <> mn <> " {\n\n"
 
 implFooterSource :: Text -> [Ident] -> Text
 implFooterSource mn foreigns =
@@ -475,7 +576,7 @@ implFooterSource mn foreigns =
           "var " <> foreignDict <> " = "<> foreignMod <> "(\"" <> mn <> "\")\n\n" <>
           (T.concat $ (\foreign' ->
                         let name = moduleIdentToIL foreign' in
-                        varDecl <> " " <> initName name <> " Once\n" <>     
+                        varDecl <> " " <> initName name <> " Once\n" <>
                         varDecl <> " " <> valueName name <> " " <> anyType <> "\n\n" <>
                         "func " <>
                         withPrefix name <>
@@ -485,7 +586,7 @@ implFooterSource mn foreigns =
                                         "Get(" <> foreignDict <> ", " <>
                                             (stringLiteral . mkString $ runIdent foreign') <> ")\n" <>
                         "    })\n" <>
-                        "    return " <> valueName name <> "\n" <> 
+                        "    return " <> valueName name <> "\n" <>
                         "}\n\n") <$> foreigns))) <>
   if mn == "Main" || mn == "Test.Main" then mainSource else "\n"
   where

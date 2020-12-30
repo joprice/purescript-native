@@ -11,6 +11,8 @@ extra-source-files:
 - ChangeLog.md
 - stack.yaml
 - support/*
+- runtime/*.h
+- runtime/*.cpp
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package

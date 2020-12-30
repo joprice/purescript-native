@@ -44,7 +44,7 @@ import CodeGen.IL.Printer
 import Tests
 
 data Command = Build | Run (Maybe String)
- 
+
 parseJson :: Text -> Value
 parseJson text
   | Just fileJson <- decode . L.encodeUtf8 $ L.fromStrict text = fileJson
@@ -136,6 +136,19 @@ main = do
       Run moduleName -> do
         callProcess "go" ["run", T.unpack project </> modPrefix' </> fromMaybe "Main" moduleName]
     return ()
+            -- TODO(joprice) cpp compilation
+            {-
+                details | branch == "cpp" = "cpp, commit: " ++ $(gitHash)
+                        | otherwise = branch
+            putStrLn $ details ++ if $(gitDirty) then " (DIRTY)" else ""
+          when (not $ null files) $ do
+            let filepath = takeDirectory (head files)
+                baseOutpath = joinPath $ (init $ splitDirectories filepath) ++ [outdir]
+            writeRuntimeFiles baseOutpath
+            Par.mapM (generateCode opts' baseOutpath) files
+            return ()
+          return ()
+          -}
 
 generateCode :: [String] -> FilePath -> FilePath -> IO ()
 generateCode opts baseOutpath jsonFile = do
@@ -218,6 +231,12 @@ help = "Usage: psgo OPTIONS COREFN-FILES\n\
        \  --run                   Run the generated go code directly, without building an\n\
        \                          executable\n\
        \  --no-build              Generate go source files, but do not build an executable\n\
+       \  --makefile              Generate a GNU Makefile which can be used for compiling\n\
+       \                          a PureScript program and libraries to a native binary via\n\
+       \                          purs corefn output and C++\n\n\
+       \  --ucns                  Use UCN encoding of unicode characters in literals and\n\
+       \                          strings in generated C++ code (for compilers that do not\n\
+       \                          support unicode literals, such as gcc)\n\n\
        \  --tests                 Run test cases (under construction)\n\n\
        \See also:\n\
        \  purs compile --help\n"

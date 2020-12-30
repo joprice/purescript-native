@@ -13,6 +13,8 @@ import qualified Language.PureScript.Constants as C
 
 tcoLoop :: Text
 tcoLoop = "ṩtco_loop"
+-- TODO(joprice) cpp
+-- tcoLoop = "_tco_loop_"
 
 tco :: AST -> AST -> AST
 tco mn = everywhere convert where
@@ -24,7 +26,7 @@ tco mn = everywhere convert where
 
   tcoDone :: Text
   tcoDone = "ṩtco_done"
-  
+
   tcoResult :: Text
   tcoResult = "ṩtco_result"
 
@@ -47,6 +49,9 @@ tco mn = everywhere convert where
 
   collectAllFunctionArgs :: [[Text]] -> (AST -> AST) -> AST -> ([[Text]], AST, AST -> AST)
   collectAllFunctionArgs allArgs f (Function s1 ident args (Block s2 (body@(Return _ _):_))) =
+    collectAllFunctionArgs (args : allArgs) (\b -> f (Function s1 ident (map copyVar args) (Block s2 [b]))) body
+  -- Handle RecLetDecl weak assignment case
+  collectAllFunctionArgs allArgs f (Function s1 ident args (Block s2 (Var{}:body@(Return _ _):_))) =
     collectAllFunctionArgs (args : allArgs) (\b -> f (Function s1 ident (map copyVar args) (Block s2 [b]))) body
   collectAllFunctionArgs allArgs f (Function ss ident args body@(Block _ _)) =
     (args : allArgs, body, f . Function ss ident (map copyVar args))
@@ -97,6 +102,11 @@ tco mn = everywhere convert where
         [ Assignment rootSS (Var rootSS $ "var " <> tcoDone) $ BooleanLiteral Nothing False
         , VariableIntroduction rootSS tcoResult Nothing
         , Assignment rootSS (Var rootSS $ "var " <> tcoLoop) (Function rootSS (Just tcoLoop) (outerArgs ++ innerArgs) (Block rootSS [loopify js]))
+        -- TODO(joprice) cpp - bool/auto vs "var"
+        -- concatMap (\arg -> [ VariableIntroduction rootSS (tcoVar arg) (Just (Var rootSS (copyVar arg))) ]) (outerArgs ++ innerArgs) ++
+        -- [ Assignment rootSS (Var rootSS $ bool <> " " <> tcoDone) $ BooleanLiteral Nothing False
+        -- , VariableIntroduction rootSS tcoResult Nothing
+        -- , Assignment rootSS (Var rootSS $ auto <> " " <> tcoLoop) (Function rootSS (Just tcoLoop) (outerArgs ++ innerArgs) (Block rootSS [loopify js]))
         , While rootSS (Unary Nothing Not (Var rootSS tcoDone))
             (Block rootSS
               [(Assignment rootSS (Var rootSS tcoResult) (App rootSS (Var rootSS tcoLoop) ((map (Var rootSS . tcoVar) outerArgs) ++ (map (Var rootSS . copyVar) innerArgs))))])

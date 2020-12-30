@@ -53,6 +53,11 @@ moduleToIL
 moduleToIL (Module _ coms mn _ imps _ foreigns decls) project =
   do
     ilDecls <- mapM (bindToIL ModuleDecl) decls
+    -- TODO(joprice) cpp
+    -- let usedNames = concatMap getNames decls
+    -- let mnLookup = renameImports usedNames imps
+    -- let decls' = renameModules mnLookup decls
+    -- ilDecls <- mapM (bindToIL ModuleDecl) decls'
     optimized <- traverse (traverse (optimize modName')) ilDecls
     let optimized' = concat optimized
         values = annotValue <$> optimized'
@@ -60,6 +65,9 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) project =
         interface = interfaceSource modName values foreigns
         imports = nub . concat $ importToIL <$> optimized'
         implHeader = implHeaderSource modName imports project
+        -- TODO(joprice) cpp
+        -- moduleHeader = fst $ importToIL' modName
+        -- implHeader = implHeaderSource modName imports moduleHeader
         implFooter = implFooterSource (runModuleName mn) foreigns
     return $ (interface, foreigns', optimized', implHeader, implFooter)
   where
@@ -87,6 +95,67 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) project =
     modRef _ = []
     extract :: Text -> Text
     extract = T.replace "_" "." . T.dropWhileEnd (=='_')
+  -- TODO(joprice) cpp
+  {-
+  -- | Creates alternative names for each module to ensure they don't collide
+  -- with declaration names.
+  renameImports :: [Ident] -> [(Ann, ModuleName)] -> M.Map ModuleName (Ann, ModuleName)
+  renameImports = go M.empty
+    where
+    go :: M.Map ModuleName (Ann, ModuleName) -> [Ident] -> [(Ann, ModuleName)] -> M.Map ModuleName (Ann, ModuleName)
+    go acc used ((ann, mn') : mns') =
+      let mni = Ident $ runModuleName mn'
+      in if mn' /= mn && mni `elem` used
+         then let newName = freshModuleName 1 mn' used
+              in go (M.insert mn' (ann, newName) acc) (Ident (runModuleName newName) : used) mns'
+         else go (M.insert mn' (ann, mn') acc) used mns'
+    go acc _ [] = acc
+
+    freshModuleName :: Integer -> ModuleName -> [Ident] -> ModuleName
+    freshModuleName i mn'@(ModuleName mname) used =
+      let newName = mname <> moduleRenamerMarker <> T.pack (show i)
+      in if Ident newName `elem` used
+         then freshModuleName (i + 1) mn' used
+         else ModuleName newName
+
+  -- | Generates IL code for a module import
+  --
+  importToIL :: AST -> [(Text, Text)]
+  importToIL = AST.everything (++) modRef
+    where
+    modRef (AST.Indexer _ (AST.Var _ _) (AST.Var _ mname))
+      | not $ T.null mname = [importToIL' mname]
+    modRef _ = []
+  -- TODO: move this stuff to the Printer
+  importToIL' :: Text -> (Text, Text)
+  importToIL' h = ("#include \"" <> h' <> "/" <> h' <> ".h\"\n", rename)
+    where
+    (h', rename) = moduleRenamer h
+    moduleRenamer :: Text -> (Text, Text)
+    moduleRenamer s
+      | (s', sfx) <- T.breakOn moduleRenamerMarker s,
+        not $ T.null sfx = (s', "namespace " <> h <> " = " <> h' <> ";\n")
+    moduleRenamer s = (s, "")
+
+  -- | Replaces the `ModuleName`s in the AST so that the generated code refers to
+  -- the collision-avoiding renamed module imports.
+  renameModules :: M.Map ModuleName (Ann, ModuleName) -> [Bind Ann] -> [Bind Ann]
+  renameModules mnLookup binds =
+    let (f, _, _) = everywhereOnValues id ilExpr goBinder
+    in map f binds
+    where
+    ilExpr :: Expr a -> Expr a
+    ilExpr (Var ann q) = Var ann (renameQual q)
+    ilExpr e = e
+    goBinder :: Binder a -> Binder a
+    goBinder (ConstructorBinder ann q1 q2 bs) = ConstructorBinder ann (renameQual q1) (renameQual q2) bs
+    goBinder b = b
+    renameQual :: Qualified a -> Qualified a
+    renameQual (Qualified (Just mn') a) =
+      let (_,mnSafe) = fromMaybe (internalError "Missing value in mnLookup") $ M.lookup mn' mnLookup
+      in Qualified (Just mnSafe) a
+    renameQual q = q
+  -}
 
   -- |
   -- Generate code in the simplified intermediate representation for a declaration
@@ -171,7 +240,7 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) project =
     where
     isRec :: Bind Ann -> Bool
     isRec (Rec _) = True
-    isRec _ = False      
+    isRec _ = False
   valueToIL (Constructor (_, _, _, Just IsNewtype) _ (ProperName ctor) _) = error "IsNewtype"
   valueToIL (Constructor _ _ (ProperName ctor) fields) =
     let body = AST.ObjectLiteral Nothing $ (mkString ctor, AST.BooleanLiteral Nothing True) :
@@ -204,6 +273,10 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) project =
   qualifiedToIL f (Qualified (Just (ModuleName mn')) a) | mn' == C.prim = AST.Var Nothing . moduleIdentToIL $ f a
   qualifiedToIL f (Qualified (Just mn') a) | mn /= mn' = AST.Indexer Nothing (AST.Var Nothing . moduleIdentToIL $ f a) (AST.Var Nothing (moduleNameToIL mn'))
   qualifiedToIL f (Qualified _ a) = AST.Indexer Nothing (AST.Var Nothing . moduleIdentToIL $ f a) (AST.Var Nothing "")
+  -- TODO(joprice) cpp - moduleNameToIL vs identToIL
+  -- qualifiedToIL f (Qualified (Just (ModuleName mn')) a) | mn' == C.prim = AST.Var Nothing . identToIL $ f a
+  -- qualifiedToIL f (Qualified (Just mn') a) | mn /= mn' = AST.Indexer Nothing (AST.Var Nothing . identToIL $ f a) (AST.Var Nothing (moduleNameToIL mn'))
+  -- qualifiedToIL f (Qualified _ a) = AST.Indexer Nothing (AST.Var Nothing . identToIL $ f a) (AST.Var Nothing "")
 
   -- foreignIdent :: Ident -> AST
   -- foreignIdent ident = accessorString (mkString $ runIdent ident) (AST.Var Nothing "$foreign")
@@ -235,9 +308,7 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) project =
         genGuard (cond, val) = do
           cond' <- valueToIL cond
           val'   <- valueToIL val
-          return
-            (AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo cond' (AST.BooleanLiteral Nothing True))
-              (AST.Block Nothing [AST.Return Nothing val']) Nothing)
+          return $ AST.IfElse Nothing (unbox' bool cond') (AST.Block Nothing [AST.Return Nothing val']) Nothing
 
       guardsToIL (Right v) = return . AST.Return Nothing <$> valueToIL v
 
@@ -275,17 +346,25 @@ moduleToIL (Module _ coms mn _ imps _ foreigns decls) project =
     return (AST.VariableIntroduction Nothing (identToIL ident) (Just (AST.Var Nothing varName)) : il)
 
   literalToBinderIL :: Text -> [AST] -> Literal (Binder Ann) -> m [AST]
-  literalToBinderIL varName done (NumericLiteral num) =
-    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.NumericLiteral Nothing num)) (AST.Block Nothing done) Nothing]
+  literalToBinderIL varName done (NumericLiteral num@Left{}) =
+    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (unbox' int $ AST.Var Nothing varName) (AST.NumericLiteral Nothing num)) (AST.Block Nothing done) Nothing]
+  literalToBinderIL varName done (NumericLiteral num@Right{}) =
+    return [AST.IfElse Nothing (unbox' bool
+                                  (foldl (\fn a -> AST.App Nothing fn [a])
+                                    (AST.Indexer Nothing (AST.Var Nothing C.eq) (AST.Var Nothing C.dataEq))
+                                    [ AST.Indexer Nothing (AST.Var Nothing C.eqNumber) (AST.Var Nothing C.dataEq)
+                                    , AST.Var Nothing varName
+                                    , AST.NumericLiteral Nothing num
+                                    ]))
+                               (AST.Block Nothing done) Nothing]
   literalToBinderIL varName done (CharLiteral c) =
-    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.StringLiteral Nothing (fromString [c]))) (AST.Block Nothing done) Nothing]
+    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (unbox' string $ AST.Var Nothing varName) (AST.StringLiteral Nothing (fromString [c]))) (AST.Block Nothing done) Nothing]
   literalToBinderIL varName done (StringLiteral str) =
-    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.StringLiteral Nothing str)) (AST.Block Nothing done) Nothing]
+    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (unbox' string $ AST.Var Nothing varName) (AST.StringLiteral Nothing str)) (AST.Block Nothing done) Nothing]
   literalToBinderIL varName done (BooleanLiteral True) =
-    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.BooleanLiteral Nothing True)) (AST.Block Nothing done) Nothing]
+    return [AST.IfElse Nothing (unbox' bool $ AST.Var Nothing varName) (AST.Block Nothing done) Nothing]
   literalToBinderIL varName done (BooleanLiteral False) =
-    return [AST.IfElse Nothing (AST.Binary Nothing AST.EqualTo (AST.Var Nothing varName) (AST.BooleanLiteral Nothing False)) (AST.Block Nothing done) Nothing]
-    -- return [AST.IfElse Nothing (AST.Unary Nothing AST.Not (AST.Var Nothing varName)) (AST.Block Nothing done) Nothing]
+    return [AST.IfElse Nothing (AST.Unary Nothing AST.Not (unbox' bool $ AST.Var Nothing varName)) (AST.Block Nothing done) Nothing]
   literalToBinderIL varName done (ObjectLiteral bs) = go done bs
     where
     go :: [AST] -> [(PSString, Binder Ann)] -> m [AST]
@@ -319,3 +398,10 @@ arrayLength a = AST.App Nothing (AST.Var Nothing arrayLengthFn) [a]
 
 copyDict :: AST -> AST
 copyDict a = AST.App Nothing (AST.Var Nothing copyDictFn) [a]
+
+unbox' :: Text -> AST -> AST
+unbox' _ v@AST.NumericLiteral{} = v
+unbox' _ v@AST.BooleanLiteral{} = v
+unbox' _ v@AST.StringLiteral{}  = v
+unbox' _ v@AST.Binary{}         = v
+unbox' t v = AST.App Nothing (AST.StringLiteral Nothing $ mkString t) [v]

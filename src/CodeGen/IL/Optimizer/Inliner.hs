@@ -23,7 +23,7 @@ import Language.PureScript.CoreImp.Optimizer.Common hiding (isDict, isDict')
 import Language.PureScript.AST (SourceSpan(..))
 import qualified Language.PureScript.Constants as C
 
-import CodeGen.IL.Common
+import CodeGen.IL.Common hiding (unbox)
 import CodeGen.IL.Optimizer.Common
 
 -- TODO: Potential bug:
@@ -123,9 +123,11 @@ inlineCommonOperators = everywhereTopDown $ applyAll $
   , inlineNonClassFunction (isModFn (C.dataFunction, C.applyFlipped)) $ \x f -> App Nothing f [x]
   , inlineUnsafeIndex (isModFnWithDict (C.dataArray, C.unsafeIndex)) $ flip (Indexer Nothing)
   ] ++
+  -- TODO(joprice) cpp - these are commented out in cpp branch
   [ fn | i <- [0..10], fn <- [ mkFn i, runFn i ] ] ++
   [ fn | i <- [0..10], fn <- [ mkEffFn C.controlMonadEffUncurried C.mkEffFn i, runEffFn C.controlMonadEffUncurried C.runEffFn i ] ] ++
   [ fn | i <- [0..10], fn <- [ mkEffFn C.effectUncurried C.mkEffectFn i, runEffFn C.effectUncurried C.runEffectFn i ] ]
+  ]
   where
   binary :: (Text, PSString) -> (Text, PSString) -> BinaryOperator -> AST -> AST
   binary dict@(_, d) fns op = convert where
@@ -218,6 +220,10 @@ inlineCommonOperators = everywhereTopDown $ applyAll $
       | p op' = Indexer ss y x
     convert (App _ (App ss op' [x]) [y])
       | p op' = App ss (Var Nothing indexFn) [x, y]
+      -- TODO(joprice) cpp
+      -- | p op' = Indexer ss y' x
+      -- where
+      -- y' = App Nothing (StringLiteral Nothing $ mkString int) [y]
     convert other = other
 
   isModFn :: (Text, PSString) -> AST -> Bool
