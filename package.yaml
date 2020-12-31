@@ -11,6 +11,8 @@ extra-source-files:
 - ChangeLog.md
 - stack.yaml
 - support/*
+- runtime/*.h
+- runtime/*.cpp
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -65,6 +67,15 @@ library:
 
 executables:
   psgo:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - psgo
+  pscpp:
     main:                Main.hs
     source-dirs:         app
     ghc-options:

@@ -19,6 +19,8 @@ moduleNameToIL :: ModuleName -> Text
 moduleNameToIL (ModuleName mn) =
   let name = T.replace "." "_" mn
   in if nameIsILBuiltIn name then (name <> moduleRenamerMarker) else name
+  -- TODO(joprice) cpp
+  -- in if nameIsILBuiltIn name then (name <> "_") else name
 
 moduleNameToIL' :: ModuleName -> Text
 moduleNameToIL' (ModuleName mn) =  T.replace "_" "." mn
@@ -51,6 +53,8 @@ unusedName = "_"
 properToIL :: Text -> Text
 properToIL name
   | nameIsILReserved name = "ˉ" <> name
+-- TODO: if cpp
+  -- | nameIsILReserved name || nameIsILBuiltIn name || prefixIsReserved name = name <> "_"
   | otherwise = T.concatMap identCharToText name
 
 -- | Attempts to find a human-readable name for a symbol, if none has been specified returns the
@@ -61,6 +65,11 @@ identCharToText c | isAlphaNum c = T.singleton c
 identCharToText '_' = "_"
 identCharToText '\'' = "ꞌ" -- lowercase saltillo
 identCharToText c = error (show (ord c)) -- TODO: should never occur now(?)
+-- switched to saltillo
+-- identCharToText '\'' = "Prime_"
+-- TODO(joprice): cpp - what are these for?
+-- identCharToText '$' = "$"
+-- identCharToText c = "_code_point_" <> T.pack (show (ord c))
 
 moduleProperToIL :: Text -> Text
 moduleProperToIL = T.concatMap identCharToText
@@ -178,6 +187,12 @@ bool = "bool"
 string :: Text
 string = "string"
 
+auto :: Text
+auto = "const auto"
+
+unbox :: Text -> Text
+unbox t = "unbox<" <> t <> ">"
+
 arrayLengthFn :: Text
 arrayLengthFn = "Length"
 
@@ -187,10 +202,15 @@ indexFn = "Index"
 copyDictFn :: Text
 copyDictFn = "CopyDict"
 
+unretainedSuffix :: Text
+unretainedSuffix = "_weak_"
+
 freshName' :: MonadSupply m => m Text
 freshName' = do
     name <- freshName
     return $ T.replace "$" "ṩ" name
+    -- return $ T.replace "$" "_var" name <> "_"
+    -- TODO(joprice) cpp
 
 moduleRenamerMarker :: Text
 moduleRenamerMarker = "__"

@@ -38,6 +38,8 @@ runTests = do
   setCurrentDirectory outputDir
 
   fetchPackages
+  -- TODO(joprice): if cpp
+  -- callProcess "git" ["clone", "--depth", "1", "https://github.com/purescript-native/cpp-ffi.git", "ffi"]
 
   let tests = filter (`notElem` skipped) passingTestCases
 
@@ -113,6 +115,7 @@ fetchPackages :: IO ()
 -------------------------------------------------------------------------------
 fetchPackages = do
   callProcess "spago" ["init"]
+  -- TODO(joprice): set backend to cpp or go
   callCommand "sed '$s/\\(}\\)/, backend = \"psgo\"\\1/'  < spago.dhall | dhall format > spago.tmp"
   callCommand "mv spago.tmp spago.dhall"
 
